@@ -89,7 +89,7 @@ http.createServer(async (req, res) => {
     res.writeHead(c.data ? 200 : 502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify(c.data ? { ...c.data, stale: !!c.error, error: c.error } : { error: c.error || 'no data' }));
   }
-  if (url.pathname === '/api/fav') {   // flat JSON for Android widget apps like KWGT
+  if (url.pathname === '/api/fav' || url.pathname.startsWith('/t/')) {   // flat data for widget apps like KWGT
     const c = await getData();
     if (!c.data) { res.writeHead(502, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: c.error })); }
     const q = (url.searchParams.get('rider') || FAV).toLowerCase();
@@ -97,10 +97,18 @@ http.createServer(async (req, res) => {
     const sc = c.data.schedule, race = sc && sc.sessions[sc.sessions.length - 1];
     const flat = {};
     ((sc && sc.sessions) || []).slice(0, 8).forEach((x, i) => { flat['s' + i + 'name'] = x.name; flat['s' + i + 'time'] = new Date(x.start).toUTCString().slice(0, 22).replace(' GMT', ''); flat['s' + i + 'iso'] = x.start; });
+    const fav = { ...flat, name: r.name, surname: String(r.name || '').trim().split(' ').pop().toUpperCase(), number: r.number ?? '', team: r.team || '', pos: r.pos, points: r.points, wins: r.wins ?? '-', podiums: r.podiums ?? '-', poles: r.poles ?? (process.env.POLES !== undefined && process.env.POLES !== '' ? Number(process.env.POLES) : 0),
+      raceName: sc ? String(sc.name).trim() : '', raceTime: race ? race.start : '', updated: c.data.updated };
+    fav.numberteam = fav.number + ' ' + fav.team;
+    if (url.pathname.startsWith('/t/')) {   // plain text: /t/surname, /t/points ...
+      const key = decodeURIComponent(url.pathname.slice(3));
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+      return res.end(key in fav ? String(fav[key]) : '');
+    }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({ ...flat, name: r.name, surname: String(r.name || '').trim().split(' ').pop().toUpperCase(), number: r.number ?? '', team: r.team || '', pos: r.pos, points: r.points, wins: r.wins ?? '-', podiums: r.podiums ?? '-', poles: r.poles ?? (process.env.POLES !== undefined && process.env.POLES !== '' ? Number(process.env.POLES) : 0),
-      raceName: sc ? String(sc.name).trim() : '', raceTime: race ? race.start : '', updated: c.data.updated }));
+    return res.end(JSON.stringify(fav));
   }
+
   const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
   if (!['index.html', 'manifest.json'].includes(name)) { res.writeHead(404); return res.end('Not found'); }
   fs.readFile(path.join(__dirname, name), (err, buf) => {
