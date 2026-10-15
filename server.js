@@ -4,6 +4,12 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const BASES = ['https://api.motogp.pulselive.com/motogp/v1', 'https://api.pulselive.com/motogp/v1'];
 let goodBase = null;
 const HEAD = { Origin: 'https://www.motogp.com', Referer: 'https://www.motogp.com/', 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' };
+const NAMES = ['Practice 1', 'Practice 2', 'Practice 3', 'Qualifying', 'Sprint', 'Race'];
+const FALLBACK = [   // session starts in UTC; Portugal and Valencia are estimates
+  ['2026-10-22T23:45:00Z','2026-10-23T04:00:00Z','2026-10-23T23:10:00Z','2026-10-23T23:50:00Z','2026-10-24T04:00:00Z','2026-10-25T03:00:00Z'],
+  ['2026-10-30T02:45:00Z','2026-10-30T07:00:00Z','2026-10-31T02:10:00Z','2026-10-31T02:50:00Z','2026-10-31T07:00:00Z','2026-11-01T07:00:00Z'],
+  ['2026-11-20T10:45:00Z','2026-11-20T15:00:00Z','2026-11-21T10:10:00Z','2026-11-21T10:50:00Z','2026-11-21T15:00:00Z','2026-11-22T13:00:00Z'],
+  ['2026-11-27T09:45:00Z','2026-11-27T14:00:00Z','2026-11-28T09:10:00Z','2026-11-28T09:50:00Z','2026-11-28T14:00:00Z','2026-11-29T13:00:00Z']];
 const TTL = 5 * 60 * 1000;             // refresh at most every 5 minutes
 const FAV = process.env.FAV_RIDER || 'Marquez';
 let cache = { t: 0, data: null, error: null };
@@ -44,19 +50,27 @@ async function build() {
     team: c.team && c.team.name, points: c.points,
     wins: c.race_wins ?? c.wins ?? null, podiums: c.podiums ?? null, poles: c.pole_positions ?? c.poles ?? null
   }));
-  const events = await j('/events?seasonYear=' + year);
-  const today = new Date().toISOString().slice(0, 10);
-  const next = events.filter(e => (e.date_end || '').slice(0, 10) >= today && !/test/i.test(e.name || ''))
-    .sort((a, b) => a.date_start.localeCompare(b.date_start))[0];
   let schedule = null;
-  if (next) {
-    const ses = await j(`/results/sessions?eventUuid=${next.id}&categoryUuid=${cat.id}`);
-    schedule = {
-      name: next.name, short: next.short_name || next.name, circuit: next.circuit && next.circuit.name,
-      start: next.date_start, end: next.date_end,
-      sessions: ses.filter(s => s.date).map(s => ({ name: label(s), start: s.date })).sort((a, b) => a.start.localeCompare(b.start))
-    };
-  }
+  try {
+    const events = await j('/events?seasonYear=' + year);
+    const today = new Date().toISOString().slice(0, 10);
+    const next = events.filter(e => (e.date_end || '').slice(0, 10) >= today && !/test/i.test(e.name || ''))
+      .sort((a, b) => a.date_start.localeCompare(b.date_start))[0];
+    if (next) {
+      let sessions = [];
+      try {
+        const ses = await j(`/results/sessions?eventUuid=${next.id}&categoryUuid=${cat.id}`);
+        sessions = ses.filter(s => s.date).map(s => ({ name: label(s), start: s.date })).sort((a, b) => a.start.localeCompare(b.start));
+      } catch (e) { console.error('sessions failed:', e.message); }
+      if (!sessions.length) {   // fall back to bundled times for the last rounds of 2026
+        const day = x => x.slice(0, 10);
+        const fb = FALLBACK.find(f => day(f[5]) >= day(next.date_start) && day(f[5]) <= day(next.date_end));
+        if (fb) sessions = NAMES.map((n, i) => ({ name: n, start: fb[i] }));
+      }
+      schedule = { name: next.name, short: next.short_name || next.name, circuit: next.circuit && next.circuit.name,
+        start: next.date_start, end: next.date_end, sessions };
+    }
+  } catch (e) { console.error('schedule failed:', e.message); }
   return { updated: new Date().toISOString(), favourite: FAV, riders, schedule };
 }
 
