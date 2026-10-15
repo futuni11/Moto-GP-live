@@ -98,7 +98,7 @@ http.createServer(async (req, res) => {
     const flat = {};
     ((sc && sc.sessions) || []).slice(0, 8).forEach((x, i) => { flat['s' + i + 'name'] = x.name; flat['s' + i + 'time'] = new Date(x.start).toUTCString().slice(0, 22).replace(' GMT', ''); flat['s' + i + 'iso'] = x.start; });
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({ ...flat, name: r.name, pos: r.pos, points: r.points, wins: r.wins ?? '-', podiums: r.podiums ?? '-', poles: r.poles ?? (process.env.POLES !== undefined && process.env.POLES !== '' ? Number(process.env.POLES) : 0),
+    return res.end(JSON.stringify({ ...flat, name: r.name, surname: String(r.name || '').trim().split(' ').pop().toUpperCase(), number: r.number ?? '', team: r.team || '', pos: r.pos, points: r.points, wins: r.wins ?? '-', podiums: r.podiums ?? '-', poles: r.poles ?? (process.env.POLES !== undefined && process.env.POLES !== '' ? Number(process.env.POLES) : 0),
       raceName: sc ? String(sc.name).trim() : '', raceTime: race ? race.start : '', updated: c.data.updated }));
   }
   const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
