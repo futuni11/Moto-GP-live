@@ -1,16 +1,27 @@
 // MotoGP live widgets server. No dependencies. Node 18+.
 // Pulls from the unofficial MotoGP website API (may change without notice).
 const http = require('http'), fs = require('fs'), path = require('path');
-const BASE = 'https://api.pulselive.com/motogp/v1';
-const HEAD = { Origin: 'https://www.motogp.com', Referer: 'https://www.motogp.com/', 'User-Agent': 'Mozilla/5.0' };
+const BASES = ['https://api.motogp.pulselive.com/motogp/v1', 'https://api.pulselive.com/motogp/v1'];
+let goodBase = null;
+const HEAD = { Origin: 'https://www.motogp.com', Referer: 'https://www.motogp.com/', 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' };
 const TTL = 5 * 60 * 1000;             // refresh at most every 5 minutes
 const FAV = process.env.FAV_RIDER || 'Marquez';
 let cache = { t: 0, data: null, error: null };
 
 async function j(u) {
-  const r = await fetch(BASE + u, { headers: HEAD });
-  if (!r.ok) throw new Error(u + ' -> HTTP ' + r.status);
-  return r.json();
+  const errs = [];
+  for (const base of goodBase ? [goodBase] : BASES) {
+    try {
+      const r = await fetch(base + u, { headers: HEAD, signal: AbortSignal.timeout(15000) });
+      if (!r.ok) { errs.push(base + u + ' -> HTTP ' + r.status); continue; }
+      goodBase = base;
+      return await r.json();
+    } catch (e) {
+      errs.push(base + u + ' -> ' + (e.cause && (e.cause.code || e.cause.message) || e.message));
+    }
+  }
+  goodBase = null;
+  throw new Error(errs.join(' | '));
 }
 const label = s => {
   const t = (s.type || s.name || '').toString().toUpperCase();
@@ -76,10 +87,10 @@ http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ ...flat, name: r.name, pos: r.pos, points: r.points, wins: r.wins ?? '-', podiums: r.podiums ?? '-', poles: r.poles ?? '-',
       raceName: sc ? sc.name : '', raceTime: race ? race.start : '', updated: c.data.updated }));
   }
-  const file = path.join(__dirname, 'public', url.pathname === '/' ? 'index.html' : path.normalize(url.pathname).replace(/^(\.\.[\/\\])+/, ''));
-  if (!file.startsWith(path.join(__dirname, 'public'))) { res.writeHead(403); return res.end(); }
-  fs.readFile(file, (err, buf) => {
+  const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+  if (!['index.html', 'manifest.json'].includes(name)) { res.writeHead(404); return res.end('Not found'); }
+  fs.readFile(path.join(__dirname, name), (err, buf) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
-    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'text/plain' }); res.end(buf);
+    res.writeHead(200, { 'Content-Type': types[path.extname(name)] || 'text/plain' }); res.end(buf);
   });
 }).listen(process.env.PORT || 3000, () => console.log('Running on port ' + (process.env.PORT || 3000)));
