@@ -100,6 +100,7 @@ http.createServer(async (req, res) => {
     const fav = { ...flat, name: r.name, surname: String(r.name || '').trim().split(' ').pop().toUpperCase(), number: r.number ?? '', team: r.team || '', pos: r.pos, points: r.points, wins: r.wins ?? '-', podiums: r.podiums ?? '-', poles: r.poles ?? (process.env.POLES !== undefined && process.env.POLES !== '' ? Number(process.env.POLES) : 0),
       raceName: sc ? String(sc.name).trim() : '', raceTime: race ? race.start : '', updated: c.data.updated };
     fav.numberteam = fav.number + ' ' + fav.team;
+    fav.pos2 = String(fav.pos).padStart(2, '0');
     if (url.pathname.startsWith('/t/')) {   // plain text: /t/surname, /t/points ...
       const key = decodeURIComponent(url.pathname.slice(3));
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
