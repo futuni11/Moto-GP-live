@@ -10,6 +10,16 @@ const FALLBACK = [   // session starts in UTC; Portugal and Valencia are estimat
   ['2026-10-30T02:45:00Z','2026-10-30T07:00:00Z','2026-10-31T02:10:00Z','2026-10-31T02:50:00Z','2026-10-31T07:00:00Z','2026-11-01T07:00:00Z'],
   ['2026-11-20T10:45:00Z','2026-11-20T15:00:00Z','2026-11-21T10:10:00Z','2026-11-21T10:50:00Z','2026-11-21T15:00:00Z','2026-11-22T13:00:00Z'],
   ['2026-11-27T09:45:00Z','2026-11-27T14:00:00Z','2026-11-28T09:10:00Z','2026-11-28T09:50:00Z','2026-11-28T14:00:00Z','2026-11-29T13:00:00Z']];
+
+const TZ_NAME = process.env.TZ_NAME || 'Asia/Karachi';   // set TZ_NAME on the host to your time zone
+const COUNTRY = [['austral', 'AUS', 'Australian GP'], ['malays', 'MYS', 'Malaysian GP'], ['portug', 'PRT', 'Portuguese GP'],
+  ['valenc', 'ESP', 'Valencian GP'], ['spain', 'ESP', 'Spanish GP'], ['qatar', 'QAT', 'Qatar GP'], ['indones', 'IDN', 'Indonesian GP'],
+  ['japan', 'JPN', 'Japanese GP'], ['thai', 'THA', 'Thai GP'], ['ital', 'ITA', 'Italian GP'], ['san marino', 'SMR', 'San Marino GP']];
+function localParts(iso, tz) {
+  const o = {}; new Intl.DateTimeFormat('en-US', { timeZone: tz, day: 'numeric', month: 'short', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+    .formatToParts(new Date(iso)).forEach(p => { o[p.type] = p.value; });
+  return { day: o.day, month: o.month, wd: o.weekday.toUpperCase(), time: o.hour + ':' + o.minute + ' ' + o.dayPeriod.toLowerCase() };
+}
 const TTL = 5 * 60 * 1000;             // refresh at most every 5 minutes
 const FAV = process.env.FAV_RIDER || 'Marquez';
 let cache = { t: 0, data: null, error: null };
@@ -67,7 +77,9 @@ async function build() {
         const fb = FALLBACK.find(f => day(f[5]) >= day(next.date_start) && day(f[5]) <= day(next.date_end));
         if (fb) sessions = NAMES.map((n, i) => ({ name: n, start: fb[i] }));
       }
+      const ordered = events.filter(e => !/test/i.test(e.name || '')).sort((a, b) => a.date_start.localeCompare(b.date_start));
       schedule = { name: next.name, short: next.short_name || next.name, circuit: next.circuit && next.circuit.name,
+        round: ordered.findIndex(e => e.id === next.id) + 1,
         start: next.date_start, end: next.date_end, sessions };
     }
   } catch (e) { console.error('schedule failed:', e.message); }
@@ -99,6 +111,16 @@ http.createServer(async (req, res) => {
     ((sc && sc.sessions) || []).slice(0, 8).forEach((x, i) => { flat['s' + i + 'name'] = x.name; flat['s' + i + 'time'] = new Date(x.start).toUTCString().slice(0, 22).replace(' GMT', ''); flat['s' + i + 'iso'] = x.start; });
     const fav = { ...flat, name: r.name, surname: String(r.name || '').trim().split(' ').pop().toUpperCase(), number: r.number ?? '', team: r.team || '', pos: r.pos, points: r.points, wins: r.wins ?? '-', podiums: r.podiums ?? '-', poles: r.poles ?? (process.env.POLES !== undefined && process.env.POLES !== '' ? Number(process.env.POLES) : 0),
       raceName: sc ? String(sc.name).trim() : '', raceTime: race ? race.start : '', updated: c.data.updated };
+    const nm = String((sc && sc.name) || '').toLowerCase();
+    const ct = COUNTRY.find(c => nm.includes(c[0]) || String((sc && sc.short) || '').toLowerCase().includes(c[0]));
+    fav.code = ct ? ct[1] : String((sc && sc.short) || '').slice(0, 3).toUpperCase();
+    fav.gp = ct ? ct[2] : String((sc && sc.name) || '').trim();
+    fav.round = sc && sc.round ? sc.round : '';
+    ((sc && sc.sessions) || []).slice(0, 8).forEach((x, i) => {
+      const p = localParts(x.start, url.searchParams.get('tz') || TZ_NAME);
+      fav['d' + i] = p.day; fav['w' + i] = p.wd; fav['t' + i] = p.time; fav['n' + i] = x.name;
+    });
+    if (race) { const p = localParts(race.start, url.searchParams.get('tz') || TZ_NAME); fav.raceline = 'Race: ' + p.day + ' ' + p.month + ' | ' + p.time.replace(':', '.').replace(' ', ''); }
     fav.numberteam = fav.number + ' ' + fav.team;
     fav.pos2 = String(fav.pos).padStart(2, '0');
     if (url.pathname.startsWith('/t/')) {   // plain text: /t/surname, /t/points ...
