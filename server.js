@@ -118,7 +118,9 @@ http.createServer(async (req, res) => {
     fav.round = sc && sc.round ? sc.round : '';
     ((sc && sc.sessions) || []).slice(0, 8).forEach((x, i) => {
       const p = localParts(x.start, url.searchParams.get('tz') || TZ_NAME);
-      fav['d' + i] = p.day; fav['w' + i] = p.wd; fav['t' + i] = p.time; fav['n' + i] = x.name;
+      const mins = { 'Practice 1': 45, 'Practice 2': 60, 'Practice 3': 30, 'Qualifying': 40, 'Sprint': 25, 'Race': 45 }[x.name] || 45;   // estimated lengths
+      const q = localParts(new Date(new Date(x.start).getTime() + mins * 60000).toISOString(), url.searchParams.get('tz') || TZ_NAME);
+      fav['d' + i] = p.day; fav['w' + i] = p.wd; fav['t' + i] = p.time; fav['r' + i] = p.time + ' \u2013 ' + q.time; fav['n' + i] = x.name;
     });
     if (race) { const p = localParts(race.start, url.searchParams.get('tz') || TZ_NAME); fav.raceline = 'Race: ' + p.day + ' ' + p.month + ' | ' + p.time.replace(':', '.').replace(' ', ''); }
     fav.numberteam = fav.number + ' ' + fav.team;
